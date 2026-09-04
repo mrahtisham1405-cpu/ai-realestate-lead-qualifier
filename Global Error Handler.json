@@ -1,0 +1,161 @@
+{
+  "name": "Global Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -144,
+        -48
+      ],
+      "id": "9bfaa2c5-009c-41f8-9669-44fe0aad022b",
+      "name": "Error Trigger"
+    },
+    {
+      "parameters": {
+        "sendTo": "ahtishamdaula4@gmail.com",
+        "subject": "⚠️ CRITICAL: Real Estate Workflow Execution Failed!",
+        "message": "=<!DOCTYPE html> <html> <head>   <style>     body { font-family: Arial, sans-serif; background-color: #f4f6f9; padding: 20px; }     .card { background: #ffffff; border-left: 5px solid #ef4444; padding: 20px; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }     h2 { color: #dc2626; margin-top: 0; }     .info { font-size: 14px; color: #334155; line-height: 1.6; }     .code-box { background: #1e293b; color: #f8fafc; padding: 12px; border-radius: 4px; font-family: monospace; font-size: 13px; word-break: break-all; }   </style> </head> <body>   <div class=\"card\">     <h2>⚠️ Real Estate AI System Error Alert</h2>     <div class=\"info\">       <p><b>Execution ID:</b> {{ $json.execution.id }}</p>       <p><b>Failed Node:</b> {{ $json.execution.lastNodeExecuted }}</p>       <p><b>Error Time:</b> {{ $now.format('YYYY-MM-DD HH:mm:ss') }}</p>     </div>     <p><b>Error Details:</b></p>     <div class=\"code-box\">       {{ $json.execution.error.message }}     </div>     <p style=\"margin-top: 15px; font-size: 12px; color: #64748b;\">       Check your n8n Executions log immediately to resolve this issue.     </p>   </div> </body> </html>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        304,
+        -48
+      ],
+      "id": "99d98da9-534a-45a7-8838-d3df2df89b9b",
+      "name": "Send a message",
+      "webhookId": "0b8ec17f-ffca-45db-a77c-aa5b1185647f",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Lecyf6r4waRdCYwf",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1jryY6Jw7IKY_m3LuPgJh1JTxfh-5sfyOkC5uqNEPWWk",
+          "mode": "list",
+          "cachedResultName": "Error_Logs",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1jryY6Jw7IKY_m3LuPgJh1JTxfh-5sfyOkC5uqNEPWWk/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1jryY6Jw7IKY_m3LuPgJh1JTxfh-5sfyOkC5uqNEPWWk/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Execution_ID": "={{ $json.execution.id }}",
+            "Failed_Node": "={{ $json.execution.lastNodeExecuted }}",
+            "Error_Message": "={{ $json.execution.error.message }}",
+            "Timestamp": "={{ $now.format('YYYY-MM-DD HH:mm:ss') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Execution_ID",
+              "displayName": "Execution_ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Failed_Node",
+              "displayName": "Failed_Node",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Error_Message",
+              "displayName": "Error_Message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        80,
+        -48
+      ],
+      "id": "f0484f69-480c-4aa9-a9e9-84829f2774ce",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CAbb4zFkISBbIWhK",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "ea372774-26c1-4ccb-80a1-56214eb4c785",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9f46aad319933f5310c20865b80c6edb93905133c083ada02291cd07c92dc6d8"
+  },
+  "nodeGroups": [],
+  "id": "2Tbs4Foa3cXdBTgx",
+  "tags": []
+}

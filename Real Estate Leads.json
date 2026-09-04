@@ -1,0 +1,901 @@
+{
+  "name": "Real Estate Leads",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "real-estate-lead",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -192,
+        -448
+      ],
+      "id": "49c60c47-af0f-4129-873e-7249e1d09de5",
+      "name": "Lead Intake",
+      "webhookId": "3e0bd10d-1eb6-4732-9932-3e241ba5fcd7"
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $json.body;\n\nconst errors = [];\n\nif (!lead.name || lead.name.trim() === \"\") {\n  errors.push(\"Name is required\");\n}\n\nif (!lead.email || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(lead.email)) {\n  errors.push(\"Valid email is required\");\n}\n\nif (!lead.phone || !/^\\+?[0-9]{10,15}$/.test(lead.phone.replace(/[\\s-()-]/g, \"\"))) {\n  errors.push(\"Valid phone number is required\");\n}\n\nif (!lead.property_type || lead.property_type.trim() === \"\") {\n  errors.push(\"Property type is required\");\n}\n\nif (!lead.location || lead.location.trim() === \"\") {\n  errors.push(\"Location is required\");\n}\n\nif (!lead.budget || isNaN(Number(lead.budget)) || Number(lead.budget) <= 0) {\n  errors.push(\"Valid budget is required\");\n}\n\nif (!lead.purpose || lead.purpose.trim() === \"\") {\n  errors.push(\"Purpose is required\");\n}\n\nreturn {\n  json: {\n    lead_id: `L${Date.now()}`,\n    name: lead.name?.trim(),\n    email: lead.email?.trim().toLowerCase(),\n    phone: lead.phone?.replace(/[\\s-()-]/g, \"\"),\n    property_type: lead.property_type?.trim(),\n    location: lead.location?.trim(),\n    budget: Number(lead.budget),\n    purpose: lead.purpose?.trim(),\n    message: lead.message?.trim() || \"\",\n    is_valid: errors.length === 0,\n    errors: errors\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        32,
+        -448
+      ],
+      "id": "48cf358f-c7ee-4f69-9722-a6bbb5e3d25e",
+      "name": "Validate Lead"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "11d4409d-86c5-4af1-a900-192cbb3187ae",
+              "leftValue": "={{ $json.is_valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        256,
+        -448
+      ],
+      "id": "708a15c4-f2cf-482d-9f1b-c13ea0a4e284",
+      "name": "Is Valid Lead?"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "16rR0SK8_ZqA1n3DObErKIN3dGLxsTc4AynIzx1vpMwQ",
+          "mode": "list",
+          "cachedResultName": "Real Estate Leads",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16rR0SK8_ZqA1n3DObErKIN3dGLxsTc4AynIzx1vpMwQ/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16rR0SK8_ZqA1n3DObErKIN3dGLxsTc4AynIzx1vpMwQ/edit#gid=0"
+        },
+        "filtersUI": {
+          "values": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        512,
+        -464
+      ],
+      "id": "c2254134-f153-4785-9b97-2dc64908fb35",
+      "name": "Get Existing Leads",
+      "retryOnFail": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CAbb4zFkISBbIWhK",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const existingLeads = $input.all().map(item => item.json);\n\n// Validation node ka output = new incoming lead\nconst newLead = $('Validate Lead').first().json;\n\n// Normalize email\nfunction normalizeEmail(email) {\n  if (!email) return null;\n  return String(email).trim().toLowerCase();\n}\n\n// Normalize Pakistani phone numbers\nfunction normalizePhone(phone) {\n  if (!phone) return null;\n\n  let p = String(phone).replace(/\\D/g, '');\n\n  // 92xxxxxxxxxx → 03xxxxxxxxx\n  if (p.startsWith('92')) {\n    p = '0' + p.substring(2);\n  }\n\n  // 3xxxxxxxxx → 03xxxxxxxxx\n  if (p.startsWith('3') && p.length === 10) {\n    p = '0' + p;\n  }\n\n  return p;\n}\n\n// Normalize name\nfunction normalizeName(name) {\n  if (!name) return null;\n  return String(name).trim().toLowerCase().replace(/\\s+/g, ' ');\n}\n\nconst newEmail = normalizeEmail(newLead.email);\nconst newPhone = normalizePhone(newLead.phone);\nconst newName = normalizeName(newLead.name);\n\nlet duplicate = false;\nlet duplicateType = null;\nlet matchedLead = null;\n\n// 1. Email check — highest priority\nif (newEmail) {\n  matchedLead = existingLeads.find(lead =>\n    normalizeEmail(lead.Email) === newEmail\n  );\n\n  if (matchedLead) {\n    duplicate = true;\n    duplicateType = 'email';\n  }\n}\n\n// 2. Phone check\nif (!duplicate && newPhone) {\n  matchedLead = existingLeads.find(lead =>\n    normalizePhone(lead.Phone) === newPhone\n  );\n\n  if (matchedLead) {\n    duplicate = true;\n    duplicateType = 'phone';\n  }\n}\n\n// 3. Name check\nif (!duplicate && newName) {\n  matchedLead = existingLeads.find(lead =>\n    normalizeName(lead.Name) === newName\n  );\n\n  if (matchedLead) {\n    duplicate = true;\n    duplicateType = 'name';\n  }\n}\n\nreturn [\n  {\n    json: {\n      ...newLead,\n      is_duplicate: duplicate,\n      duplicate_match: duplicateType,\n      matched_lead_id: matchedLead?.Lead_ID || null\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        736,
+        -480
+      ],
+      "id": "5b5d2e30-9dd8-40e1-b40a-d29b7cd4fce8",
+      "name": "Detect Duplicate"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "16rR0SK8_ZqA1n3DObErKIN3dGLxsTc4AynIzx1vpMwQ",
+          "mode": "list",
+          "cachedResultName": "Real Estate Leads",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16rR0SK8_ZqA1n3DObErKIN3dGLxsTc4AynIzx1vpMwQ/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16rR0SK8_ZqA1n3DObErKIN3dGLxsTc4AynIzx1vpMwQ/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Name": "={{ $json.name }}",
+            "Email": "={{ $json.email }}",
+            "Phone": "={{ $json.phone }}",
+            "Property Type": "={{ $json.property_type }}",
+            "Location": "={{ $json.location }}",
+            "Budget": "={{ $json.budget }}",
+            "Purpose": "={{ $json.purpose }}",
+            "Message": "={{ $json.message }}",
+            "Created At": "={{ $now }}",
+            "Lead_ID": "={{ $json.lead_id }}",
+            "Lead_Score": "={{ $json.lead_score }}",
+            "Lead_Status": "={{ $json.lead_status }}",
+            "AI_Reason": "={{ $json.reason }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Lead_ID",
+              "displayName": "Lead_ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Property Type",
+              "displayName": "Property Type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Location",
+              "displayName": "Location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Budget",
+              "displayName": "Budget",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Purpose",
+              "displayName": "Purpose",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Message",
+              "displayName": "Message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Lead_Score",
+              "displayName": "Lead_Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Lead_Status",
+              "displayName": "Lead_Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Created At",
+              "displayName": "Created At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "AI_Reason",
+              "displayName": "AI_Reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -192,
+        16
+      ],
+      "id": "afa3b7d9-27ff-464a-8c91-4f96e6ccaea0",
+      "name": "Save New Lead",
+      "retryOnFail": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CAbb4zFkISBbIWhK",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "24f23b76-4254-4366-a205-23d99cedc077",
+              "leftValue": "={{ $json.is_duplicate }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -176,
+        -272
+      ],
+      "id": "fba63ae2-7a6c-4e8d-b369-514fd4d3ccde",
+      "name": "Is Duplicate?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $json.content?.parts?.[0]?.text || \"\";\n\n// Clean Markdown backticks\nlet cleanText = text\n  .replace(/```json/gi, \"\")\n  .replace(/```/g, \"\")\n  .trim();\n\nlet aiResult;\n\ntry {\n  aiResult = JSON.parse(cleanText);\n} catch (error) {\n  throw new Error(\"AI response is not valid JSON: \" + text);\n}\n\n// Fetch original lead data from 'Detect Duplicate' node\nconst lead = $('Detect Duplicate').first().json;\n\nreturn [\n  {\n    json: {\n      lead_id: lead.Lead_id || lead.lead_id,\n      name: lead.name,\n      email: lead.email,\n      phone: lead.phone,\n      property_type: lead.property_type,\n      location: lead.location,\n      budget: lead.budget,\n      purpose: lead.purpose,\n      message: lead.message,\n\n      lead_score: Number(aiResult.lead_score || 0),\n      lead_status: aiResult.lead_status || aiResult.score,\n      reason: aiResult.reason || aiResult.reasoning,\n\n      created_at: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        -160
+      ],
+      "id": "e75c7f49-48e8-4e7d-9711-60a9ccd382b2",
+      "name": "Prepare Final Lead"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "models/gemini-3-flash-preview"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are a real estate lead qualification specialist.\n\nAnalyze this lead.\n\nScore the lead from 0 to 100.\n\nRules:\n80-100 = HOT\n50-79 = WARM\n0-49 = COLD\n\nConsider:\n- Buying/renting intent\n- Budget\n- Property requirement\n- Location\n- Urgency/timeline\n- Overall seriousness\n\nIMPORTANT:\nReturn ONLY a valid JSON object.\nDo not use markdown.\nDo not add explanations outside JSON.\nDo not include thinking or reasoning.\n\nRequired format:\n{\n  \"lead_score\": 85,\n  \"lead_status\": \"HOT\",\n  \"reason\": \"Short explanation\"\n\n}\n\nLead:\nName: {{ $json.name }}\nEmail: {{ $json.email }}\nPhone: {{ $json.phone }}\nProperty Type: {{ $json.property_type }}\nLocation: {{ $json.location }}\nBudget: {{ $json.budget }}\nPurpose: {{ $json.purpose }}\nMessage: {{ $json.message }}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        48,
+        -144
+      ],
+      "id": "b7e1a977-8953-4308-b8da-10c1fb2a8f82",
+      "name": "Parse AI Qualification",
+      "retryOnFail": true,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "IB4tYlFKzgQ5C88O",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.Lead_Status }}",
+                    "rightValue": "HOT",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "da39aecd-9bd3-4002-824e-09c2a2abd084"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "HOT"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "dd6f34d5-2aaf-4209-be18-fa586fd02722",
+                    "leftValue": "={{ $json.Lead_Status }}",
+                    "rightValue": "WARM",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "WARM"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "037a608c-750a-456e-9b07-95ffb6aa70f6",
+                    "leftValue": "={{ $json.Lead_Status }}",
+                    "rightValue": "COLD",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "COLD"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        64,
+        0
+      ],
+      "id": "222a058c-3cd4-4391-a042-9e7265960e03",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.Email }}",
+        "subject": "=Your Property Search in {{ $json.Location }} — Let’s Find the Right Option",
+        "message": "=<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: 'Arial', sans-serif; background-color: #f4f6f9; margin: 0; padding: 20px; }\n    .container { max-width: 600px; background: #ffffff; margin: 0 auto; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }\n    .header { background: #dc2626; color: #ffffff; padding: 25px; text-align: center; }\n    .header h1 { margin: 0; font-size: 20px; font-weight: 700; }\n    .content { padding: 30px; color: #333333; line-height: 1.6; }\n    .req-box { background: #fef2f2; border-left: 4px solid #dc2626; padding: 15px; margin: 20px 0; border-radius: 4px; }\n    .req-box p { margin: 4px 0; font-size: 14px; }\n    \n    /* V6 Recommendation Dynamic Box */\n    .prop-card { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 18px; margin: 20px 0; }\n    .prop-title { margin: 0 0 8px 0; color: #0f172a; font-size: 16px; font-weight: bold; }\n    .prop-detail { font-size: 14px; color: #475569; margin: 3px 0; }\n    \n    .footer { background: #f8fafc; text-align: center; padding: 20px; font-size: 13px; color: #64748b; border-top: 1px solid #e2e8f0; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>Priority Property Match</h1>\n    </div>\n    \n    <div class=\"content\">\n      <p>Hi <strong>{{ $json.Name }}</strong>,</p>\n      \n      <p>Thank you for sharing your property requirements with us.</p>\n      \n      <p>Based on the details you provided, we’d be happy to help you find a <b>{{ $json['Property Type'] }}</b> in <b>{{ $json.Location }}</b> within your budget of <b>PKR {{ $json.Budget }}</b>.</p>\n\n      <div class=\"req-box\">\n        <strong>Your Requirements:</strong>\n        <p>🏠 <b>Property:</b> {{ $json['Property Type'] }}</p>\n        <p>📍 <b>Location:</b> {{ $json.Location }}</p>\n        <p>💰 <b>Budget:</b> PKR {{ $json.Budget }}</p>\n        <p>🎯 <b>Purpose:</b> {{ $json.Purpose }}</p>\n      </div>\n<!-- V6 Match Found Section -->\n{{ $('Match Properties').item.json.has_recommendations ? '<div class=\"prop-card\"><div class=\"prop-title\">🌟 Direct Matched Property Listing</div><div class=\"prop-detail\"><b>Title:</b> ' + $('Match Properties').item.json.recommended_properties[0].Title + '</div><div class=\"prop-detail\">📍 <b>Location:</b> ' + $('Match Properties').item.json.recommended_properties[0].Location + '</div><div class=\"prop-detail\">🛏️ <b>Bedrooms:</b> ' + $('Match Properties').item.json.recommended_properties[0].Bedrooms + ' Bed</div><div class=\"prop-detail\">💵 <b>Price:</b> PKR ' + $('Match Properties').item.json.recommended_properties[0].Price + '</div><div style=\"margin-top: 10px;\"><a href=\"' + $('Match Properties').item.json.recommended_properties[0].Listing_URL + '\" style=\"color: #dc2626; font-weight: bold;\">View Details & Photos →</a></div></div>' : '' }}\n      <p>Since you’re looking to move forward soon, one of our property specialists can contact you shortly to discuss suitable options and answer any questions you may have.</p>\n      \n      <p>If you’re available, simply reply to this email with a suitable time for a quick call.</p>\n    </div>\n\n    <div class=\"footer\">\n      <strong>Best regards,</strong><br>\n      Real Estate Sales Team<br>\n      <span style=\"font-size: 12px; color: #94a3b8;\">Helping you find the right property with confidence.</span>\n    </div>\n  </div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        320,
+        0
+      ],
+      "id": "635c1d05-9926-45b7-9abf-3dc805836450",
+      "name": "HOT Leads Path",
+      "webhookId": "57731680-9930-4608-9196-d9bc582d36a4",
+      "retryOnFail": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Lecyf6r4waRdCYwf",
+          "name": "Gmail account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Let’s Explore the Best Property Options for You",
+        "message": "=Hi {{name}},\n\nThank you for contacting us and sharing your property requirements.\n\nWe understand that finding the right {{property_type}} in {{location}} takes careful consideration. Our team can help you compare available options based on your budget, preferred location and requirements.\n\nYour Current Requirements:\n\nProperty: {{property_type}}\nLocation: {{location}}\nBudget: PKR {{budget}}\nPurpose: {{purpose}}\n\nIf your requirements or budget have changed, just reply to this email and let us know. We’ll help you narrow down the options that make the most sense for you.\n\nWhenever you're ready, we're here to help.\n\nBest regards,\nReal Estate Sales Team\nMaking your property search simpler.",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        320,
+        144
+      ],
+      "id": "fea2683b-691d-4029-aaf0-9c909375dff0",
+      "name": "WARM Leads",
+      "webhookId": "57731680-9930-4608-9196-d9bc582d36a4",
+      "retryOnFail": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Lecyf6r4waRdCYwf",
+          "name": "Gmail account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Still Looking for a Property in {{location}}?",
+        "message": "=Hi {{name}},\n\nWe wanted to follow up regarding your property inquiry.\n\nYou previously showed interest in a {{property_type}} in {{location}}. If you’re still searching, we’d be happy to help you explore suitable options.\n\nYour current requirements:\n\nProperty: {{property_type}}\nLocation: {{location}}\nBudget: PKR {{budget}}\n\nIf you're no longer looking, that's completely fine. If your requirements have changed, simply reply with your updated preferences and we'll take it from there.\n\nWhenever you're ready, we're here to help.\n\nBest regards,\nReal Estate Sales Team",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        320,
+        288
+      ],
+      "id": "da9f08e9-600b-4363-8396-cb119eabcbfb",
+      "name": "COLD Leads",
+      "webhookId": "57731680-9930-4608-9196-d9bc582d36a4",
+      "retryOnFail": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Lecyf6r4waRdCYwf",
+          "name": "Gmail account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "16rR0SK8_ZqA1n3DObErKIN3dGLxsTc4AynIzx1vpMwQ",
+          "mode": "list",
+          "cachedResultName": "Real Estate Leads",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16rR0SK8_ZqA1n3DObErKIN3dGLxsTc4AynIzx1vpMwQ/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1046913318,
+          "mode": "list",
+          "cachedResultName": "Duplicate Leads",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16rR0SK8_ZqA1n3DObErKIN3dGLxsTc4AynIzx1vpMwQ/edit#gid=1046913318"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Lead ID": "={{ $json.lead_id }}",
+            "Name": "={{ $json.name }}",
+            "Email": "={{ $json.email }}",
+            "Phone": "={{ $json.phone }}",
+            "Timestamp": "={{ new Date().toISOString() }}",
+            "Status": "Duplicate Skipped",
+            "Original Lead ID": "={{ $json.matched_lead_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Lead ID",
+              "displayName": "Lead ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Original Lead ID",
+              "displayName": "Original Lead ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        64,
+        -288
+      ],
+      "id": "13ef8265-2c4c-4461-8fef-80a7c88c674f",
+      "name": "Duplicate Leads",
+      "retryOnFail": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CAbb4zFkISBbIWhK",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "-1003713969272",
+        "text": "=🔥 URGENT: NEW HOT LEAD RECEIVED!  👤 Client Name: {{ $('Switch').item.json.Name }} 📞 Phone:{{ $('Switch').item.json.Phone }}  ✉️ Email: {{ $('Switch').item.json.Email }}🏠 Property: {{ $('Switch').item.json['Property Type'] }} in {{ $('Switch').item.json.Location }} 💰 Budget: {{ $('Switch').item.json.Budget }}PKR  🤖 AI Reasoning: {{ $('Switch').item.json.AI_Reason }} ⚡ Action Required: Call client immediately within 15 minutes!",
+        "additionalFields": {
+          "appendAttribution": true
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        608,
+        16
+      ],
+      "id": "f7b1900b-2bb0-4321-b9ac-fe472099c8d9",
+      "name": "Send HOT Lead Telegram Alert",
+      "webhookId": "b90c98e4-4643-4ea5-9330-e491e9436c16",
+      "retryOnFail": true,
+      "credentials": {
+        "telegramApi": {
+          "id": "4v1qKmCnMs1JSjQX",
+          "name": "Telegram account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.Email }}",
+        "subject": "=We Received Your Duplicate Inquiry — {{ $json.Name }}",
+        "message": "=<!DOCTYPE html> <html> <body style=\"font-family: Arial, sans-serif; color: #333; line-height: 1.5;\">   <div style=\"max-width: 500px; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;\">     <h3 style=\"color: #2563eb; margin-top: 0;\">Request Already Received</h3>     <p>Hi <strong>{{ $json.Name }}</strong>,</p>     <p>We noticed you recently submitted another inquiry with us for <b>{{ $('Is Duplicate?').item.json.property_type }}</b> in <b>{{ $('Is Duplicate?').item.json.location }}</b>.</p>     <p>Your previous request is already assigned to our property specialist. They will get in touch with you shortly on <b>{{ $json.Phone }}</b>.</p>     <p style=\"font-size: 12px; color: #64748b; margin-top: 20px;\">Thank you for your patience!</p>   </div> </body> </html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        384,
+        -304
+      ],
+      "id": "31dd568a-5037-4f0f-9f7b-eabaf7aea784",
+      "name": "Send a message",
+      "webhookId": "8e09af4c-7868-4201-b5fe-b57c2db10d35",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Lecyf6r4waRdCYwf",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Lead Intake": {
+      "main": [
+        [
+          {
+            "node": "Validate Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Lead": {
+      "main": [
+        [
+          {
+            "node": "Is Valid Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Valid Lead?": {
+      "main": [
+        [
+          {
+            "node": "Get Existing Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Existing Leads": {
+      "main": [
+        [
+          {
+            "node": "Detect Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detect Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Is Duplicate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Duplicate?": {
+      "main": [
+        [
+          {
+            "node": "Duplicate Leads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parse AI Qualification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Final Lead": {
+      "main": [
+        [
+          {
+            "node": "Save New Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Qualification": {
+      "main": [
+        [
+          {
+            "node": "Prepare Final Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "HOT Leads Path",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WARM Leads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "COLD Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save New Lead": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HOT Leads Path": {
+      "main": [
+        [
+          {
+            "node": "Send HOT Lead Telegram Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplicate Leads": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "2Tbs4Foa3cXdBTgx",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "d5038ec1-276b-4d1b-9e53-7d12115b54ea",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9f46aad319933f5310c20865b80c6edb93905133c083ada02291cd07c92dc6d8"
+  },
+  "nodeGroups": [],
+  "id": "DA69LCbZJkiAzlfs",
+  "tags": []
+}
