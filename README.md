@@ -1,5 +1,5 @@
 # 🏠 AI Real Estate Lead Qualification System
-
+![Workflow Architecture](./lead.png)
 A lightweight, automated lead capture, validation, duplicate detection, and AI-powered scoring system designed specifically for real estate agencies. 
 
 This project receives incoming property leads (from webhooks, Meta Ads, or web forms), validates contact details, checks for duplicates, scores the lead's buying intent using OpenAI / Gemini models, and syncs the structured output into Google Sheets and CRMs for immediate agent action.
