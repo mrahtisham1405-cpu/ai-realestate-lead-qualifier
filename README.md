@@ -92,7 +92,7 @@ Set up your destination Google Sheet with the following headers:
 | Metric | Cost / Value |
 | :--- | :--- |
 | **Estimated Monthly Infra Cost:** | Rs. 1,500 – 4,500 PKR ($5 – $15 USD) |
-| **Starter Setup Price:** | Rs. 35,000 – 45,000 PKR |
+| **Starter Setup Price:** | Rs. 30,000 – 40,000 PKR |
 | **Monthly Maintenance Retainer:** | Rs. 10,000 PKR / month |
 
 ---
